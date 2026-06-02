@@ -1,0 +1,59 @@
+# Dependency directories
+node_modules/
+
+# Build output
+dist/
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Temporary files
+*.tmp
+*.temp
+
+# Generated lock files (if you don't want to commit them)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Mac filesystem metadata
+.AppleDouble
+.LSOverride
+
+# Ignore coverage reports
+coverage/
+
+# Ignore runtime files
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Ignore local test and build report files
+report.*
+
+# Ignore local history files
+.history/
+
+# Vite env file type declaration caching
+src/vite-env.d.ts
