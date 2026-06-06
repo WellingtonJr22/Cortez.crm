@@ -1,24 +1,37 @@
 // Email sending helper for Cortez CRM.
 //
-// Uses Resend (https://resend.com) — a provider with a free tier — over its
-// plain HTTP API, so no extra npm dependency is required. Configuration is read
-// from environment variables and never hard-coded:
+// Supports three providers, all with a free tier, over their plain HTTP APIs —
+// so no extra npm dependency is required. The provider is chosen automatically
+// by whichever API key is present in the environment (Brevo first, then
+// SendGrid, then Resend). Configuration is read from environment variables and
+// never hard-coded.
 //
-//   RESEND_API_KEY  (required to actually send) — your Resend API key.
-//   EMAIL_FROM      (optional) — the "From" address, e.g.
-//                   "Cortez CRM <equipe@suaempresa.com>". Defaults to Resend's
-//                   shared onboarding sender, which works without verifying a
-//                   domain but can only deliver to your own Resend account email.
+// To send invitations to ANY recipient for free WITHOUT owning a domain, use
+// Brevo or SendGrid: create a free account, verify a single sender email
+// address (a one-time confirmation email to, e.g., your own Gmail), set its key,
+// and set EMAIL_FROM to that verified address.
 //
-// When RESEND_API_KEY is not set, sending is skipped gracefully (the invite is
+//   BREVO_API_KEY     — Brevo (brevo.com) API key. Free: 300 emails/day.
+//   SENDGRID_API_KEY  — SendGrid API key. Free: 100 emails/day.
+//   RESEND_API_KEY    — Resend API key. NOTE: Resend's shared sender only
+//                       delivers to your own Resend account email; to reach any
+//                       recipient it requires a fully verified DOMAIN.
+//   EMAIL_FROM        — the "From" address, e.g.
+//                       "Cortez CRM <equipe@suaempresa.com>". REQUIRED for Brevo
+//                       and SendGrid (must be your verified sender). For Resend
+//                       it defaults to the shared onboarding sender.
+//
+// When no provider key is set, sending is skipped gracefully (the invite is
 // still created) and the caller is told the email was not sent.
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
-const DEFAULT_FROM = "Cortez CRM <onboarding@resend.dev>";
+const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
+const SENDGRID_ENDPOINT = "https://api.sendgrid.com/v3/mail/send";
+const RESEND_DEFAULT_FROM = "Cortez CRM <onboarding@resend.dev>";
 
 export interface SendResult {
   sent: boolean;
-  // true when no API key is configured, so nothing was attempted.
+  // true when no provider is configured, so nothing was attempted.
   skipped?: boolean;
   error?: string;
 }
@@ -30,31 +43,121 @@ interface SendOptions {
   text: string;
 }
 
-async function sendEmail({ to, subject, html, text }: SendOptions): Promise<SendResult> {
-  const apiKey = Netlify.env.get("RESEND_API_KEY");
-  if (!apiKey) {
-    return { sent: false, skipped: true };
+// Parse a "Name <email@host>" or bare "email@host" string into parts.
+function parseFrom(raw: string): { name: string; email: string } {
+  const match = raw.match(/^\s*(.*?)\s*<\s*([^>]+)\s*>\s*$/);
+  if (match) return { name: match[1] || "Cortez CRM", email: match[2].trim() };
+  return { name: "Cortez CRM", email: raw.trim() };
+}
+
+async function sendViaBrevo(apiKey: string, from: string, opts: SendOptions): Promise<SendResult> {
+  const sender = parseFrom(from);
+  const res = await fetch(BREVO_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "api-key": apiKey,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      sender,
+      to: [{ email: opts.to }],
+      subject: opts.subject,
+      htmlContent: opts.html,
+      textContent: opts.text,
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    console.error("Brevo send failed", res.status, detail);
+    return { sent: false, error: brevoHint(res.status) };
   }
-  const from = Netlify.env.get("EMAIL_FROM") || DEFAULT_FROM;
+  return { sent: true };
+}
+
+function brevoHint(status: number): string {
+  if (status === 401) return "Chave do Brevo inválida (BREVO_API_KEY).";
+  if (status === 400) return "Remetente não verificado no Brevo. Verifique o EMAIL_FROM no painel do Brevo.";
+  return `Falha no envio pelo Brevo (${status}).`;
+}
+
+async function sendViaSendgrid(apiKey: string, from: string, opts: SendOptions): Promise<SendResult> {
+  const sender = parseFrom(from);
+  const res = await fetch(SENDGRID_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: opts.to }] }],
+      from: { email: sender.email, name: sender.name },
+      subject: opts.subject,
+      content: [
+        { type: "text/plain", value: opts.text },
+        { type: "text/html", value: opts.html },
+      ],
+    }),
+  });
+  // SendGrid returns 202 Accepted on success.
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    console.error("SendGrid send failed", res.status, detail);
+    if (res.status === 403) {
+      return { sent: false, error: "Remetente não verificado no SendGrid. Verifique o EMAIL_FROM (Single Sender Verification)." };
+    }
+    if (res.status === 401) return { sent: false, error: "Chave do SendGrid inválida (SENDGRID_API_KEY)." };
+    return { sent: false, error: `Falha no envio pelo SendGrid (${res.status}).` };
+  }
+  return { sent: true };
+}
+
+async function sendViaResend(apiKey: string, from: string, opts: SendOptions): Promise<SendResult> {
+  const res = await fetch(RESEND_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ from, to: opts.to, subject: opts.subject, html: opts.html, text: opts.text }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    console.error("Resend send failed", res.status, detail);
+    // Resend's shared sender refuses any recipient other than the account owner.
+    if (res.status === 403 && from === RESEND_DEFAULT_FROM) {
+      return {
+        sent: false,
+        error:
+          "O remetente padrão do Resend só entrega para o email da sua própria conta Resend. Para enviar a qualquer email, use Brevo ou SendGrid (verifique um remetente) ou verifique um domínio no Resend.",
+      };
+    }
+    return { sent: false, error: `Falha no envio (${res.status}).` };
+  }
+  return { sent: true };
+}
+
+async function sendEmail(opts: SendOptions): Promise<SendResult> {
+  const brevoKey = Netlify.env.get("BREVO_API_KEY");
+  const sendgridKey = Netlify.env.get("SENDGRID_API_KEY");
+  const resendKey = Netlify.env.get("RESEND_API_KEY");
+  const from = Netlify.env.get("EMAIL_FROM");
 
   try {
-    const res = await fetch(RESEND_ENDPOINT, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ from, to, subject, html, text }),
-    });
-
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      console.error("Resend send failed", res.status, detail);
-      return { sent: false, error: `Falha no envio (${res.status}).` };
+    if (brevoKey) {
+      if (!from) return { sent: false, error: "Configure EMAIL_FROM com seu remetente verificado no Brevo." };
+      return await sendViaBrevo(brevoKey, from, opts);
     }
-    return { sent: true };
+    if (sendgridKey) {
+      if (!from) return { sent: false, error: "Configure EMAIL_FROM com seu remetente verificado no SendGrid." };
+      return await sendViaSendgrid(sendgridKey, from, opts);
+    }
+    if (resendKey) {
+      return await sendViaResend(resendKey, from || RESEND_DEFAULT_FROM, opts);
+    }
+    return { sent: false, skipped: true };
   } catch (err) {
-    console.error("Resend request error", err);
+    console.error("Email request error", err);
     return { sent: false, error: "Não foi possível contatar o serviço de email." };
   }
 }
