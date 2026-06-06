@@ -1,19 +1,10 @@
-// Lightweight mock replacement for Base44 SDK for local testing.
-// Stores leads, messages, automations and users in browser localStorage.
+// API client for the Cortez CRM frontend.
+// Leads, messages, automations and users are all persisted server-side through
+// Netlify Functions backed by Netlify Database (Postgres). Visibility is enforced
+// on the server: attendants only receive their own clients, admins receive all.
 
-const STORAGE_KEYS = {
-  leads: 'mock_leads_v1',
-  messages: 'mock_messages_v1',
-  automations: 'mock_automations_v1',
-  users: 'mock_users_v1',
-  auth: 'local_auth_user',
-};
-
-const nowISO = () => new Date().toISOString();
-const generateId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-
-// Server API helper (real auth + team management via Netlify Functions).
-// Leads/messages/automations remain client-side mocks for now.
+// Server API helper — always sends/receives the session cookie and surfaces a
+// useful error message from the JSON body.
 const apiFetch = async (path, options = {}) => {
   const res = await fetch(path, {
     credentials: 'include',
@@ -32,44 +23,8 @@ const apiFetch = async (path, options = {}) => {
   return data;
 };
 
-const readStorage = (key) => {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    return [];
-  }
-};
-
-const writeStorage = (key, value) => {
-  localStorage.setItem(key, JSON.stringify(value));
-};
-
-const getCurrentUser = () => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.auth);
-    return stored ? JSON.parse(stored) : null;
-  } catch {
-    return null;
-  }
-};
-
-const ensureUsers = () => {
-  const users = readStorage(STORAGE_KEYS.users);
-  if (users.length === 0) {
-    const defaultAdmin = {
-      id: 'local_admin',
-      email: 'admin@local',
-      full_name: 'Admin Local',
-      role: 'admin',
-      created_date: nowISO(),
-    };
-    writeStorage(STORAGE_KEYS.users, [defaultAdmin]);
-    return [defaultAdmin];
-  }
-  return users;
-};
-
+// Order helper: applies the same "-field" / "field" ordering the app used before,
+// over the rows returned by the server.
 const sortByOrder = (items, order) => {
   if (!order) return items;
   const desc = order.startsWith('-');
@@ -110,107 +65,47 @@ export const base44 = {
   entities: {
     Lead: {
       list: async (order) => {
-        const leads = readStorage(STORAGE_KEYS.leads);
+        const leads = await apiFetch('/api/leads', { method: 'GET' });
         return sortByOrder(leads, order);
       },
       create: async (data) => {
-        const leads = readStorage(STORAGE_KEYS.leads);
-        const id = generateId();
-        const now = nowISO();
-        const currentUser = getCurrentUser();
-        const newLead = {
-          id,
-          created_date: now,
-          updated_date: now,
-          resolved: false,
-          last_message_preview: '',
-          attendant_type: 'ia',
-          source: 'whatsapp',
-          tags: [],
-          needs_human: false,
-          ...data,
-          created_by: data.created_by || currentUser?.email || 'admin@local',
-        };
-        leads.unshift(newLead);
-        writeStorage(STORAGE_KEYS.leads, leads);
-        return newLead;
+        return apiFetch('/api/leads', { method: 'POST', body: JSON.stringify(data) });
       },
       update: async (id, data) => {
-        const leads = readStorage(STORAGE_KEYS.leads);
-        const idx = leads.findIndex((l) => String(l.id) === String(id));
-        if (idx === -1) throw new Error('Lead not found');
-        leads[idx] = { ...leads[idx], ...data, updated_date: nowISO() };
-        writeStorage(STORAGE_KEYS.leads, leads);
-        return leads[idx];
+        return apiFetch(`/api/leads/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
       },
       delete: async (id) => {
-        const leads = readStorage(STORAGE_KEYS.leads);
-        const idx = leads.findIndex((l) => String(l.id) === String(id));
-        if (idx === -1) throw new Error('Lead not found');
-        const [removed] = leads.splice(idx, 1);
-        writeStorage(STORAGE_KEYS.leads, leads);
-        return removed;
+        return apiFetch(`/api/leads/${id}`, { method: 'DELETE' });
       },
       filter: async (criteria = {}, order) => {
-        let leads = readStorage(STORAGE_KEYS.leads);
-        leads = filterItems(leads, criteria);
-        return sortByOrder(leads, order);
+        const leads = await apiFetch('/api/leads', { method: 'GET' });
+        return sortByOrder(filterItems(leads, criteria), order);
       },
     },
     Message: {
       create: async (data) => {
-        const messages = readStorage(STORAGE_KEYS.messages);
-        const id = generateId();
-        const now = nowISO();
-        const message = {
-          id,
-          created_date: now,
-          ...data,
-        };
-        messages.push(message);
-        writeStorage(STORAGE_KEYS.messages, messages);
-        return message;
+        return apiFetch('/api/messages', { method: 'POST', body: JSON.stringify(data) });
       },
       filter: async (criteria = {}, order) => {
-        let messages = readStorage(STORAGE_KEYS.messages);
-        messages = filterItems(messages, criteria);
-        return sortByOrder(messages, order);
+        const leadId = criteria.lead_id;
+        if (!leadId) return [];
+        const messages = await apiFetch(`/api/messages?lead_id=${encodeURIComponent(leadId)}`, { method: 'GET' });
+        return sortByOrder(filterItems(messages, criteria), order);
       },
     },
     Automation: {
       list: async (order) => {
-        const items = readStorage(STORAGE_KEYS.automations);
+        const items = await apiFetch('/api/automations', { method: 'GET' });
         return sortByOrder(items, order);
       },
       create: async (data) => {
-        const items = readStorage(STORAGE_KEYS.automations);
-        const id = generateId();
-        const now = nowISO();
-        const automation = {
-          id,
-          created_date: now,
-          status: 'pending',
-          ...data,
-        };
-        items.unshift(automation);
-        writeStorage(STORAGE_KEYS.automations, items);
-        return automation;
+        return apiFetch('/api/automations', { method: 'POST', body: JSON.stringify(data) });
       },
       update: async (id, data) => {
-        const items = readStorage(STORAGE_KEYS.automations);
-        const idx = items.findIndex((i) => String(i.id) === String(id));
-        if (idx === -1) throw new Error('Automation not found');
-        items[idx] = { ...items[idx], ...data, updated_date: nowISO() };
-        writeStorage(STORAGE_KEYS.automations, items);
-        return items[idx];
+        return apiFetch(`/api/automations/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
       },
       delete: async (id) => {
-        const items = readStorage(STORAGE_KEYS.automations);
-        const idx = items.findIndex((i) => String(i.id) === String(id));
-        if (idx === -1) throw new Error('Automation not found');
-        const [removed] = items.splice(idx, 1);
-        writeStorage(STORAGE_KEYS.automations, items);
-        return removed;
+        return apiFetch(`/api/automations/${id}`, { method: 'DELETE' });
       },
     },
     User: {
@@ -248,9 +143,28 @@ export const base44 = {
 
   integrations: {
     Core: {
+      // Uploads the file to Netlify Blobs (via /api/upload) so attachments persist
+      // across devices and users, returning a stable URL stored alongside the message.
       UploadFile: async ({ file }) => {
         if (!file) return { file_url: '' };
-        return { file_url: URL.createObjectURL(file) };
+        const form = new FormData();
+        form.append('file', file);
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          credentials: 'include',
+          body: form,
+        });
+        if (!res.ok) {
+          let message = `Erro ${res.status}`;
+          try {
+            const data = await res.json();
+            message = data?.error || message;
+          } catch {
+            // ignore
+          }
+          throw new Error(message);
+        }
+        return res.json();
       },
       InvokeLLM: async (input) => buildMockResponse(input),
     },
