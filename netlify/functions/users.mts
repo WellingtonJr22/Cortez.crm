@@ -3,6 +3,7 @@ import { eq, desc, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { users } from "../../db/schema.js";
 import { getSessionUser, json } from "../lib/auth.mjs";
+import { sendInviteEmail } from "../lib/email.mjs";
 
 type DbUser = typeof users.$inferSelect;
 
@@ -73,7 +74,15 @@ async function invite(req: Request): Promise<Response> {
       status: "invited",
     })
     .returning();
-  return json(publicUser(created), { status: 201 });
+
+  // Send the invitation email. A failure here must not undo the invite — the
+  // account is already reserved — so we only surface the delivery status.
+  const mail = await sendInviteEmail(normEmail, finalRole);
+
+  return json(
+    { ...publicUser(created), email_sent: mail.sent, email_skipped: !!mail.skipped, email_error: mail.error },
+    { status: 201 },
+  );
 }
 
 async function update(id: string, req: Request, selfId: string): Promise<Response> {

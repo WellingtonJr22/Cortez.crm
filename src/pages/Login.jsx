@@ -5,10 +5,22 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { LogIn, UserPlus } from 'lucide-react';
 
+// Read invite parameters (?invite=1&email=...) so an invitation link lands
+// directly on the signup form with the email prefilled.
+function readInviteParams() {
+  if (typeof window === 'undefined') return { invited: false, email: '' };
+  const params = new URLSearchParams(window.location.search);
+  return {
+    invited: params.get('invite') === '1' || params.has('email'),
+    email: params.get('email') || '',
+  };
+}
+
 export default function Login() {
-  const [mode, setMode] = useState('login'); // 'login' | 'signup'
+  const invite = readInviteParams();
+  const [mode, setMode] = useState(invite.invited ? 'signup' : 'login'); // 'login' | 'signup'
   const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(invite.email);
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);

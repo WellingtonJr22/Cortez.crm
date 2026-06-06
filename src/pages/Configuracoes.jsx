@@ -91,8 +91,14 @@ export default function Configuracoes() {
     }
     setInviting(true);
     try {
-      await base44.users.inviteUser(inviteEmail.trim(), inviteRole);
-      toast.success(`Convite enviado para ${inviteEmail}`);
+      const res = await base44.users.inviteUser(inviteEmail.trim(), inviteRole);
+      if (res?.email_sent) {
+        toast.success(`Convite enviado por email para ${inviteEmail}`);
+      } else if (res?.email_skipped) {
+        toast.success(`Convite criado para ${inviteEmail}. Envio de email não configurado — avise a pessoa para se cadastrar com este email.`);
+      } else {
+        toast.success(`Convite criado para ${inviteEmail}, mas o email não pôde ser enviado${res?.email_error ? `: ${res.email_error}` : ''}. Avise a pessoa para se cadastrar com este email.`);
+      }
       setInviteEmail('');
       queryClient.invalidateQueries({ queryKey: ['users-admin'] });
     } catch {
