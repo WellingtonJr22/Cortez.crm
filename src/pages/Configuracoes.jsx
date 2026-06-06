@@ -42,13 +42,17 @@ const TAB_ITEMS = [
   { id: 'sistema', label: 'Sistema', icon: Settings2 },
 ];
 
-const roleLabel = { admin: 'Administrador', user: 'Atendente' };
-const roleColor = { admin: 'bg-primary/15 text-primary border-primary/30', user: 'bg-secondary text-muted-foreground border-border' };
+const roleLabel = { admin: 'Administrador', atendente: 'Atendente', vendedor: 'Vendedor' };
+const roleColor = {
+  admin: 'bg-primary/15 text-primary border-primary/30',
+  atendente: 'bg-secondary text-muted-foreground border-border',
+  vendedor: 'bg-secondary text-muted-foreground border-border',
+};
 
 export default function Configuracoes() {
   const [tab, setTab] = useState('equipe');
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState('user');
+  const [inviteRole, setInviteRole] = useState('atendente');
   const [inviting, setInviting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
@@ -341,7 +345,8 @@ Retorne JSON com: { "sent": true/false, "status_code": número, "response_body":
                   onChange={e => setInviteRole(e.target.value)}
                   className="bg-secondary border border-border text-foreground rounded-md px-3 py-2 text-sm"
                 >
-                  <option value="user">Atendente</option>
+                  <option value="atendente">Atendente</option>
+                  <option value="vendedor">Vendedor</option>
                   <option value="admin" disabled={admins.length >= 3}>
                     Administrador {admins.length >= 3 ? '(limite atingido)' : ''}
                   </option>
@@ -380,14 +385,14 @@ Retorne JSON com: { "sent": true/false, "status_code": número, "response_body":
                           {isMe && <span className="text-[10px] bg-secondary px-2 py-0.5 rounded-full text-muted-foreground">Você</span>}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-                        {user.created_date && (
+                        {user.created_at && (
                           <p className="text-[10px] text-muted-foreground mt-0.5">
-                            Desde {format(new Date(user.created_date), "dd 'de' MMM 'de' yyyy", { locale: ptBR })}
+                            Desde {format(new Date(user.created_at), "dd 'de' MMM 'de' yyyy", { locale: ptBR })}
                           </p>
                         )}
                       </div>
                       {/* Role badge */}
-                      <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border shrink-0", roleColor[user.role] || roleColor.user)}>
+                      <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border shrink-0", roleColor[user.role] || roleColor.atendente)}>
                         {isUserAdmin && <Crown className="w-3 h-3 inline mr-1" />}
                         {roleLabel[user.role] || 'Atendente'}
                       </span>
@@ -398,7 +403,7 @@ Retorne JSON com: { "sent": true/false, "status_code": número, "response_body":
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleRoleChange(user, 'user')}
+                              onClick={() => handleRoleChange(user, 'atendente')}
                               className="text-xs border-border text-muted-foreground hover:text-foreground"
                             >
                               Rebaixar

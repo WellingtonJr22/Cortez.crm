@@ -12,6 +12,26 @@ const STORAGE_KEYS = {
 const nowISO = () => new Date().toISOString();
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
+// Server API helper (real auth + team management via Netlify Functions).
+// Leads/messages/automations remain client-side mocks for now.
+const apiFetch = async (path, options = {}) => {
+  const res = await fetch(path, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    ...options,
+  });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    throw new Error(data?.error || `Erro ${res.status}`);
+  }
+  return data;
+};
+
 const readStorage = (key) => {
   try {
     const raw = localStorage.getItem(key);
@@ -195,36 +215,31 @@ export const base44 = {
     },
     User: {
       list: async () => {
-        return ensureUsers();
+        return apiFetch('/api/users', { method: 'GET' });
       },
       update: async (id, data) => {
-        const users = ensureUsers();
-        const idx = users.findIndex((user) => String(user.id) === String(id));
-        if (idx === -1) throw new Error('User not found');
-        users[idx] = { ...users[idx], ...data, updated_date: nowISO() };
-        writeStorage(STORAGE_KEYS.users, users);
-        return users[idx];
+        return apiFetch(`/api/users/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(data),
+        });
       },
       delete: async (id) => {
-        const users = ensureUsers();
-        const idx = users.findIndex((user) => String(user.id) === String(id));
-        if (idx === -1) throw new Error('User not found');
-        const [removed] = users.splice(idx, 1);
-        writeStorage(STORAGE_KEYS.users, users);
-        return removed;
+        return apiFetch(`/api/users/${id}`, { method: 'DELETE' });
       },
     },
   },
 
   auth: {
     me: async () => {
-      const currentUser = getCurrentUser();
-      if (currentUser) return currentUser;
-      const users = ensureUsers();
-      return users[0];
+      const data = await apiFetch('/api/auth/me', { method: 'GET' });
+      return data.user;
     },
-    logout: () => {
-      localStorage.removeItem(STORAGE_KEYS.auth);
+    logout: async () => {
+      try {
+        await apiFetch('/api/auth/logout', { method: 'POST' });
+      } catch {
+        // ignore
+      }
     },
     redirectToLogin: () => {
       window.location.href = '/login';
@@ -242,24 +257,13 @@ export const base44 = {
   },
 
   users: {
-    inviteUser: async (email, role = 'user') => {
+    inviteUser: async (email, role = 'atendente') => {
       const normalizedEmail = email.trim().toLowerCase();
       if (!normalizedEmail) throw new Error('Email inválido');
-      const users = ensureUsers();
-      if (users.some((u) => u.email?.toLowerCase() === normalizedEmail)) {
-        throw new Error('Usuário já convidado');
-      }
-      const newUser = {
-        id: generateId(),
-        email: normalizedEmail,
-        full_name: normalizedEmail.split('@')[0],
-        role,
-        invited_date: nowISO(),
-        status: 'invited',
-      };
-      users.push(newUser);
-      writeStorage(STORAGE_KEYS.users, users);
-      return newUser;
+      return apiFetch('/api/users', {
+        method: 'POST',
+        body: JSON.stringify({ email: normalizedEmail, role }),
+      });
     },
   },
 };
