@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Send, Bot, User, Paperclip, ArrowRightLeft, Phone, MoreVertical, ExternalLink, CheckCheck, Mic, MicOff, Image, FileVideo, X, Play, Pause } from 'lucide-react';
+import { Send, Bot, User, Paperclip, ArrowRightLeft, Phone, MoreVertical, ExternalLink, CheckCheck, Mic, MicOff, Image, FileVideo, X, Play, Pause, Users, Crown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,7 +21,9 @@ const senderColors = {
   humano: 'bg-blue-500/15 border border-blue-500/20',
 };
 
-export default function ChatWindow({ lead, onTransfer, onResolve }) {
+const roleLabel = { admin: 'Administrador', atendente: 'Atendente', vendedor: 'Vendedor' };
+
+export default function ChatWindow({ lead, currentUser, teamMembers = [], onTransfer, onForward, onResolve }) {
   const [newMessage, setNewMessage] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -129,6 +131,23 @@ export default function ChatWindow({ lead, onTransfer, onResolve }) {
     if (isRecording) stopRecording();
   };
 
+  // Membros que podem receber a conversa: admins e atendentes ativos, exceto você mesmo.
+  const forwardTargets = teamMembers.filter(
+    m => m.status !== 'suspended' && m.status !== 'invited' && m.email !== currentUser?.email
+  );
+
+  const handleForward = (member) => {
+    onForward?.(lead, member);
+    // Registra a transferência como uma nota visível na conversa.
+    sendMutation.mutate({
+      lead_id: lead.id,
+      content: `🔄 Conversa encaminhada para ${member.full_name || member.email}${member.role ? ` (${roleLabel[member.role] || member.role})` : ''}`,
+      sender_type: 'humano',
+      sender_name: currentUser?.full_name || 'Sistema',
+      message_type: 'text',
+    });
+  };
+
   if (!lead) {
     return (
       <div className="flex-1 flex items-center justify-center bg-background">
@@ -174,6 +193,46 @@ export default function ChatWindow({ lead, onTransfer, onResolve }) {
               <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" />
               Assumir Chat
             </Button>
+          )}
+          {!lead.resolved && forwardTargets.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs border-blue-400/30 text-blue-400 hover:bg-blue-500/10"
+                >
+                  <Users className="w-3.5 h-3.5 mr-1.5" />
+                  Encaminhar
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Encaminhar para
+                </div>
+                <DropdownMenuSeparator />
+                {forwardTargets.map(member => (
+                  <DropdownMenuItem
+                    key={member.id}
+                    onClick={() => handleForward(member)}
+                    className="gap-2"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-primary/15 border border-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                      {(member.full_name || member.email)?.charAt(0)?.toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-foreground truncate flex items-center gap-1">
+                        {member.role === 'admin' && <Crown className="w-3 h-3 text-primary shrink-0" />}
+                        {member.full_name || member.email}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground truncate">
+                        {roleLabel[member.role] || 'Atendente'}
+                      </p>
+                    </div>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           {!lead.resolved && (
             <Button

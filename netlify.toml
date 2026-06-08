@@ -1,0 +1,14 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# SPA fallback for React Router. Function routes (/api/*) and assets are
+# matched first by the platform, so this only catches client-side routes.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

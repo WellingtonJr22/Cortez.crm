@@ -20,6 +20,12 @@ export default function Chat() {
     queryFn: () => base44.entities.Lead.list('-updated_date'),
   });
 
+  // Team members available to receive a forwarded conversation (admins + attendants).
+  const { data: teamMembers = [] } = useQuery({
+    queryKey: ['users-team'],
+    queryFn: () => base44.entities.User.list(),
+  });
+
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => base44.entities.Lead.update(id, data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['leads'] }),
@@ -42,6 +48,7 @@ export default function Chat() {
     if (isAdmin) return true;
     return (
       lead.created_by === currentUser?.email ||
+      lead.attendant_email === currentUser?.email ||
       lead.attendant_name === currentUser?.full_name ||
       lead.attendant_name === currentUser?.email
     );
@@ -63,11 +70,26 @@ export default function Chat() {
   );
 
   const handleTransfer = (lead) => {
-    updateMutation.mutate({
-      id: lead.id,
-      data: { attendant_type: 'humano', attendant_name: currentUser?.full_name || 'Atendente', needs_human: false }
-    });
-    setSelectedLead({ ...lead, attendant_type: 'humano', attendant_name: currentUser?.full_name || 'Atendente', needs_human: false });
+    const data = {
+      attendant_type: 'humano',
+      attendant_name: currentUser?.full_name || 'Atendente',
+      attendant_email: currentUser?.email || null,
+      needs_human: false,
+    };
+    updateMutation.mutate({ id: lead.id, data });
+    setSelectedLead({ ...lead, ...data });
+  };
+
+  // Encaminha (atribui) a conversa para outro membro da equipe.
+  const handleForward = (lead, member) => {
+    const data = {
+      attendant_type: 'humano',
+      attendant_name: member.full_name || member.email,
+      attendant_email: member.email,
+      needs_human: false,
+    };
+    updateMutation.mutate({ id: lead.id, data });
+    if (selectedLead?.id === lead.id) setSelectedLead({ ...lead, ...data });
   };
 
   const handleResolve = (lead) => {
@@ -90,7 +112,10 @@ export default function Chat() {
       />
       <ChatWindow
         lead={selectedLead}
+        currentUser={currentUser}
+        teamMembers={teamMembers}
         onTransfer={handleTransfer}
+        onForward={handleForward}
         onResolve={handleResolve}
       />
     </div>

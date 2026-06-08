@@ -57,3 +57,6 @@ report.*
 
 # Vite env file type declaration caching
 src/vite-env.d.ts
+
+# Local Netlify folder
+.netlify
