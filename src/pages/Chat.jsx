@@ -20,10 +20,10 @@ export default function Chat() {
     queryFn: () => base44.entities.Lead.list('-updated_date'),
   });
 
-  // Team members available to receive a forwarded conversation (admins + attendants).
-  const { data: teamMembers = [] } = useQuery({
-    queryKey: ['users-team'],
-    queryFn: () => base44.entities.User.list(),
+  // Active attendants a conversation can be forwarded/assigned to (admins only).
+  const { data: attendants = [] } = useQuery({
+    queryKey: ['attendants'],
+    queryFn: () => base44.entities.User.listAttendants(),
   });
 
   const updateMutation = useMutation({
@@ -43,16 +43,10 @@ export default function Chat() {
 
   const isAdmin = currentUser?.role === 'admin';
 
-  // Filtro de visibilidade: admin vê todos, atendente vê apenas os seus
-  const visibleLeads = leads.filter(lead => {
-    if (isAdmin) return true;
-    return (
-      lead.created_by === currentUser?.email ||
-      lead.attendant_email === currentUser?.email ||
-      lead.attendant_name === currentUser?.full_name ||
-      lead.attendant_name === currentUser?.email
-    );
-  });
+  // The server already returns only the leads this user may see (admins: all;
+  // attendants: only the ones assigned to them), so no extra client filter is
+  // needed for visibility — that guarantee cannot be bypassed from the browser.
+  const visibleLeads = leads;
 
   // Filtro por status
   const filteredByStatus = visibleLeads.filter(lead => {
@@ -69,27 +63,35 @@ export default function Chat() {
     l.last_message_preview?.toLowerCase().includes(search.toLowerCase())
   );
 
+  // "Assumir": flip the conversation to human handling. Visibility/assignment is
+  // unchanged — the lead is already this user's (or the admin sees everything).
   const handleTransfer = (lead) => {
     const data = {
       attendant_type: 'humano',
-      attendant_name: currentUser?.full_name || 'Atendente',
-      attendant_email: currentUser?.email || null,
       needs_human: false,
     };
     updateMutation.mutate({ id: lead.id, data });
     setSelectedLead({ ...lead, ...data });
   };
 
-  // Encaminha (atribui) a conversa para outro membro da equipe.
+  // Admin assigns the conversation/lead to a specific attendant. The server
+  // validates the target is an active attendant and rewrites the denormalised
+  // name/email; the role enforcement does not trust this request.
   const handleForward = (lead, member) => {
     const data = {
       attendant_type: 'humano',
-      attendant_name: member.full_name || member.email,
-      attendant_email: member.email,
+      assigned_to_user_id: member.id,
       needs_human: false,
     };
     updateMutation.mutate({ id: lead.id, data });
-    if (selectedLead?.id === lead.id) setSelectedLead({ ...lead, ...data });
+    if (selectedLead?.id === lead.id) {
+      setSelectedLead({
+        ...lead,
+        ...data,
+        assigned_to_name: member.full_name || member.email,
+        assigned_to_email: member.email,
+      });
+    }
   };
 
   const handleResolve = (lead) => {
@@ -113,7 +115,7 @@ export default function Chat() {
       <ChatWindow
         lead={selectedLead}
         currentUser={currentUser}
-        teamMembers={teamMembers}
+        teamMembers={isAdmin ? attendants : []}
         onTransfer={handleTransfer}
         onForward={handleForward}
         onResolve={handleResolve}

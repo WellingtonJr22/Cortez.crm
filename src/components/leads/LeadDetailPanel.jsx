@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Phone, Mail, Calendar, DollarSign, MapPin, User, Bot, MessageCircle, Trash2, Save } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import AttendantSelect from '@/components/leads/AttendantSelect';
 import { cn } from '@/lib/utils';
 
 const sourceLabels = {
@@ -66,6 +67,20 @@ export default function LeadDetailPanel({ lead, onClose, onSave, onDelete, extra
 
   const set = (key, val) => {
     setForm(f => ({ ...f, [key]: val }));
+    setDirty(true);
+  };
+
+  // Update the responsible attendant (and its denormalised name/email) from the
+  // chosen attendant object, or clear it when set to "no responsible".
+  const setAttendant = (att) => {
+    setForm(f => ({
+      ...f,
+      assigned_to_user_id: att?.id || null,
+      assigned_to_name: att?.full_name || att?.email || '',
+      assigned_to_email: att?.email || null,
+      attendant_name: att?.full_name || att?.email || '',
+      attendant_email: att?.email || null,
+    }));
     setDirty(true);
   };
 
@@ -176,7 +191,7 @@ export default function LeadDetailPanel({ lead, onClose, onSave, onDelete, extra
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Atendente">
+          <Field label="Tipo de Atendimento">
             <Select value={form.attendant_type || ''} onValueChange={v => set('attendant_type', v)}>
               <SelectTrigger className="bg-secondary border-border h-9 text-sm">
                 <SelectValue placeholder="Selecione..." />
@@ -187,11 +202,9 @@ export default function LeadDetailPanel({ lead, onClose, onSave, onDelete, extra
               </SelectContent>
             </Select>
           </Field>
-          {form.attendant_type === 'humano' && (
-            <Field label="Nome do Atendente">
-              <TextInput value={form.attendant_name} onChange={v => set('attendant_name', v)} placeholder="Nome do atendente" />
-            </Field>
-          )}
+          <Field label="Atendente Responsável" icon={User}>
+            <AttendantSelect value={form.assigned_to_user_id} onChange={setAttendant} />
+          </Field>
         </div>
 
         {/* Financeiro */}

@@ -1,5 +1,5 @@
 import type { Config, Context } from "@netlify/functions";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { users } from "../../db/schema.js";
 import { getSessionUser, json } from "../lib/auth.mjs";
@@ -7,8 +7,10 @@ import { sendInviteEmail } from "../lib/email.mjs";
 
 type DbUser = typeof users.$inferSelect;
 
-const ROLES = ["admin", "atendente", "vendedor"];
+// Only two team roles exist. Anything else is rejected server-side.
+const ROLES = ["admin", "atendente"];
 const STATUSES = ["active", "invited", "suspended"];
+const MAX_ADMINS = 3;
 
 function publicUser(u: DbUser) {
   return {
@@ -21,6 +23,16 @@ function publicUser(u: DbUser) {
   };
 }
 
+// Number of accounts holding the admin role (used for the 3-admin cap and to
+// protect the last admin).
+async function adminCount(): Promise<number> {
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(users)
+    .where(eq(users.role, "admin"));
+  return Number(count);
+}
+
 export default async (req: Request, context: Context) => {
   const session = await getSessionUser(req);
   if (!session) return json({ error: "Não autenticado." }, { status: 401 });
@@ -28,7 +40,7 @@ export default async (req: Request, context: Context) => {
   const id = context.params.id;
 
   try {
-    if (req.method === "GET" && !id) return list();
+    if (req.method === "GET" && !id) return list(req, session);
 
     // All mutations require an admin.
     if (session.role !== "admin") {
@@ -46,7 +58,22 @@ export default async (req: Request, context: Context) => {
   }
 };
 
-async function list(): Promise<Response> {
+async function list(req: Request, session): Promise<Response> {
+  // The active-attendants picker (used when assigning a lead/conversation) is
+  // available to any authenticated user; it only exposes active attendants.
+  if (new URL(req.url).searchParams.get("scope") === "attendants") {
+    const rows = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.role, "atendente"), eq(users.status, "active")))
+      .orderBy(users.fullName);
+    return json(rows.map(publicUser));
+  }
+
+  // The full team roster is team-management data — admins only.
+  if (session.role !== "admin") {
+    return json({ error: "Apenas administradores." }, { status: 403 });
+  }
   const rows = await db.select().from(users).orderBy(desc(users.createdAt));
   return json(rows.map(publicUser));
 }
@@ -57,7 +84,16 @@ async function invite(req: Request): Promise<Response> {
     .catch(() => ({}))) as { email?: string; role?: string };
   const normEmail = String(email || "").trim().toLowerCase();
   if (!normEmail) return json({ error: "Email inválido." }, { status: 400 });
+  // New members default to atendente; only "admin" overrides that.
   const finalRole = ROLES.includes(role) ? role : "atendente";
+
+  // Enforce the 3-admin cap on the server, never just in the UI.
+  if (finalRole === "admin" && (await adminCount()) >= MAX_ADMINS) {
+    return json(
+      { error: `Limite de ${MAX_ADMINS} administradores atingido.` },
+      { status: 400 },
+    );
+  }
 
   const existing = (
     await db.select().from(users).where(eq(users.email, normEmail))
@@ -93,12 +129,29 @@ async function update(id: string, req: Request, selfId: string): Promise<Respons
   };
   const patch: Partial<DbUser> = {};
 
-  if (body.role !== undefined) {
+  const target = (await db.select().from(users).where(eq(users.id, id)))[0];
+  if (!target) return json({ error: "Usuário não encontrado." }, { status: 404 });
+
+  if (body.role !== undefined && body.role !== target.role) {
     if (!ROLES.includes(body.role)) {
       return json({ error: "Função inválida." }, { status: 400 });
     }
     if (id === selfId && body.role !== "admin") {
       return json({ error: "Você não pode rebaixar sua própria conta." }, { status: 400 });
+    }
+    // Promotion to admin respects the 3-admin cap.
+    if (body.role === "admin" && (await adminCount()) >= MAX_ADMINS) {
+      return json(
+        { error: `Limite de ${MAX_ADMINS} administradores atingido.` },
+        { status: 400 },
+      );
+    }
+    // Demotion must never remove the last remaining admin.
+    if (target.role === "admin" && body.role !== "admin" && (await adminCount()) <= 1) {
+      return json(
+        { error: "Não é possível rebaixar o último administrador." },
+        { status: 400 },
+      );
     }
     patch.role = body.role;
   }
@@ -109,6 +162,17 @@ async function update(id: string, req: Request, selfId: string): Promise<Respons
     }
     if (id === selfId && body.status !== "active") {
       return json({ error: "Você não pode suspender sua própria conta." }, { status: 400 });
+    }
+    // Suspending/deactivating the last admin would lock everyone out.
+    if (
+      target.role === "admin" &&
+      body.status !== "active" &&
+      (await adminCount()) <= 1
+    ) {
+      return json(
+        { error: "Não é possível suspender o último administrador." },
+        { status: 400 },
+      );
     }
     patch.status = body.status;
   }
@@ -136,14 +200,8 @@ async function remove(id: string, selfId: string): Promise<Response> {
   if (!target) return json({ error: "Usuário não encontrado." }, { status: 404 });
 
   // Never remove the last remaining admin.
-  if (target.role === "admin") {
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(users)
-      .where(eq(users.role, "admin"));
-    if (Number(count) <= 1) {
-      return json({ error: "Não é possível remover o último administrador." }, { status: 400 });
-    }
+  if (target.role === "admin" && (await adminCount()) <= 1) {
+    return json({ error: "Não é possível remover o último administrador." }, { status: 400 });
   }
 
   await db.delete(users).where(eq(users.id, id));

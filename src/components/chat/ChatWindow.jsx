@@ -21,7 +21,7 @@ const senderColors = {
   humano: 'bg-blue-500/15 border border-blue-500/20',
 };
 
-const roleLabel = { admin: 'Administrador', atendente: 'Atendente', vendedor: 'Vendedor' };
+const roleLabel = { admin: 'Administrador', atendente: 'Atendente' };
 
 export default function ChatWindow({ lead, currentUser, teamMembers = [], onTransfer, onForward, onResolve }) {
   const [newMessage, setNewMessage] = useState('');

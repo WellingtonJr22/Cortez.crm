@@ -112,6 +112,11 @@ export const base44 = {
       list: async () => {
         return apiFetch('/api/users', { method: 'GET' });
       },
+      // Active attendants only — used to populate the "responsible attendant"
+      // pickers on leads and conversations. Available to any logged-in user.
+      listAttendants: async () => {
+        return apiFetch('/api/users?scope=attendants', { method: 'GET' });
+      },
       update: async (id, data) => {
         return apiFetch(`/api/users/${id}`, {
           method: 'PATCH',

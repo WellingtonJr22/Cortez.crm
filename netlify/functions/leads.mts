@@ -8,6 +8,7 @@ import {
   canSeeLead,
   publicLead,
   leadPatchFromBody,
+  resolveAssignment,
 } from "../lib/crm.mjs";
 
 // CRM leads (clients). Attendants only see/modify the leads they own or are
@@ -44,12 +45,21 @@ async function create(req: Request, session): Promise<Response> {
   const name = String(patch.name ?? "").trim();
   if (!name) return json({ error: "Nome é obrigatório." }, { status: 400 });
 
+  // Who the lead is assigned to is decided on the server from the session:
+  // an attendant always gets their own leads; an admin may pick any active
+  // attendant (or leave it unassigned).
+  const assignment = await resolveAssignment(session, body, "create");
+  if (!assignment.ok) {
+    return json({ error: assignment.error }, { status: assignment.status });
+  }
+
   const [created] = await db
     .insert(leads)
     .values({
       ...patch,
+      ...assignment.patch,
       name,
-      // The creator owns the lead; this is what drives attendant visibility.
+      // The creator is recorded as owner (back-compat / fallback visibility).
       ownerId: session.sub,
       createdBy: session.email,
     })
@@ -64,9 +74,16 @@ async function update(id: string, req: Request, session): Promise<Response> {
     return json({ error: "Lead não encontrado." }, { status: 404 });
   }
 
-  const patch = leadPatchFromBody(
-    (await req.json().catch(() => ({}))) as Record<string, unknown>,
-  );
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const patch = leadPatchFromBody(body) as Record<string, unknown>;
+
+  // Reassignment is admin-only and validated server-side; attendants keep the
+  // existing responsible attendant no matter what the request body claims.
+  const assignment = await resolveAssignment(session, body, "update");
+  if (!assignment.ok) {
+    return json({ error: assignment.error }, { status: assignment.status });
+  }
+  Object.assign(patch, assignment.patch);
   patch.updatedAt = new Date();
 
   const [updated] = await db
