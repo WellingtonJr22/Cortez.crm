@@ -5,29 +5,47 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus } from 'lucide-react';
+import AttendantSelect from '@/components/leads/AttendantSelect';
+import { useAuth } from '@/lib/AuthContext';
+import { Plus, Bot, User } from 'lucide-react';
+
+const EMPTY = {
+  name: '',
+  phone: '',
+  email: '',
+  source: 'whatsapp',
+  birthday: '',
+  notes: '',
+  stage: 'atendimento_ia',
+  attendant_type: 'ia',
+  assigned_to_user_id: null,
+  assigned_to_name: '',
+  assigned_to_email: null,
+};
 
 export default function AddLeadDialog({ open, onClose, onSave }) {
-  const [form, setForm] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    source: 'whatsapp',
-    birthday: '',
-    notes: '',
-  });
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const [form, setForm] = useState(EMPTY);
+
+  const setAttendant = (att) => {
+    setForm((f) => ({
+      ...f,
+      assigned_to_user_id: att?.id || null,
+      assigned_to_name: att?.full_name || att?.email || '',
+      assigned_to_email: att?.email || null,
+    }));
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     onSave({
       ...form,
-      stage: 'atendimento_ia',
-      attendant_type: 'ia',
       tags: ['novo'],
       needs_human: false,
       cart_abandoned: false,
     });
-    setForm({ name: '', phone: '', email: '', source: 'whatsapp', birthday: '', notes: '' });
+    setForm(EMPTY);
     onClose();
   };
 
@@ -95,6 +113,49 @@ export default function AddLeadDialog({ open, onClose, onSave }) {
               />
             </div>
           </div>
+          {/* Pipeline & Origem */}
+          <div className="space-y-3 rounded-xl border border-border bg-secondary/40 p-3">
+            <p className="text-xs font-semibold text-foreground">Pipeline &amp; Origem</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Etapa</Label>
+                <Select value={form.stage} onValueChange={(v) => setForm({ ...form, stage: v })}>
+                  <SelectTrigger className="bg-secondary border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="atendimento_ia">Atendimento por IA</SelectItem>
+                    <SelectItem value="atendendo">Atendendo</SelectItem>
+                    <SelectItem value="vendido_ia">Vendido por IA</SelectItem>
+                    <SelectItem value="vendido_atendente">Vendido por Atendente</SelectItem>
+                    <SelectItem value="perda">Perda</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Tipo de Atendimento</Label>
+                <Select value={form.attendant_type} onValueChange={(v) => setForm({ ...form, attendant_type: v })}>
+                  <SelectTrigger className="bg-secondary border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ia"><span className="flex items-center gap-1.5"><Bot className="w-3 h-3" />IA</span></SelectItem>
+                    <SelectItem value="humano"><span className="flex items-center gap-1.5"><User className="w-3 h-3" />Humano</span></SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Atendente Responsável</Label>
+              <AttendantSelect value={form.assigned_to_user_id} onChange={setAttendant} />
+              <p className="text-[11px] text-muted-foreground">
+                {isAdmin
+                  ? 'Opcional — deixe sem responsável para distribuir depois.'
+                  : 'Novos leads criados por você são atribuídos automaticamente a você.'}
+              </p>
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label>Observações</Label>
             <Textarea

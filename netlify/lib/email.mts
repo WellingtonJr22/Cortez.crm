@@ -175,7 +175,6 @@ function siteUrl(): string {
 const ROLE_LABELS: Record<string, string> = {
   admin: "Administrador",
   atendente: "Atendente",
-  vendedor: "Vendedor",
 };
 
 export async function sendInviteEmail(email: string, role: string): Promise<SendResult> {

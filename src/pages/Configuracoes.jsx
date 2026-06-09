@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Users, Plus, Trash2, MailCheck, AlertTriangle,
   Crown, CheckCircle2, XCircle, Smartphone, Link2,
@@ -42,17 +42,23 @@ const TAB_ITEMS = [
   { id: 'sistema', label: 'Sistema', icon: Settings2 },
 ];
 
-const roleLabel = { admin: 'Administrador', atendente: 'Atendente', vendedor: 'Vendedor' };
+const roleLabel = { admin: 'Administrador', atendente: 'Atendente' };
 const roleColor = {
   admin: 'bg-primary/15 text-primary border-primary/30',
   atendente: 'bg-secondary text-muted-foreground border-border',
-  vendedor: 'bg-secondary text-muted-foreground border-border',
 };
+
+const ROLE_FILTERS = [
+  { id: 'all', label: 'Todos' },
+  { id: 'admin', label: 'Administradores' },
+  { id: 'atendente', label: 'Atendentes' },
+];
 
 export default function Configuracoes() {
   const [tab, setTab] = useState('equipe');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('atendente');
+  const [roleFilter, setRoleFilter] = useState('all');
   const [inviting, setInviting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
@@ -74,13 +80,17 @@ export default function Configuracoes() {
     base44.auth.me().then(setCurrentUser).catch(() => {});
   }, []);
 
+  const isAdmin = currentUser?.role === 'admin';
+
+  // The full team roster is admin-only on the server; only fetch it for admins.
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['users-admin'],
     queryFn: () => base44.entities.User.list(),
+    enabled: isAdmin,
   });
 
   const admins = users.filter(u => u.role === 'admin');
-  const isAdmin = currentUser?.role === 'admin';
+  const visibleUsers = roleFilter === 'all' ? users : users.filter(u => u.role === roleFilter);
 
   const handleInvite = async (e) => {
     e.preventDefault();
@@ -313,7 +323,17 @@ Retorne JSON com: { "sent": true/false, "status_code": número, "response_body":
       </div>
 
       {/* ===== EQUIPE ===== */}
-      {tab === 'equipe' && (
+      {tab === 'equipe' && !isAdmin && (
+        <div className="bg-card border border-border rounded-2xl p-8 text-center space-y-2">
+          <Users className="w-8 h-8 text-muted-foreground mx-auto" />
+          <p className="font-semibold text-foreground">Gerenciamento de equipe restrito</p>
+          <p className="text-sm text-muted-foreground">
+            Apenas administradores podem visualizar e gerenciar os membros da equipe.
+          </p>
+        </div>
+      )}
+
+      {tab === 'equipe' && isAdmin && (
         <div className="space-y-6">
           {/* Admin limit warning */}
           <div className={cn(
@@ -332,52 +352,68 @@ Retorne JSON com: { "sent": true/false, "status_code": número, "response_body":
           </div>
 
           {/* Invite */}
-          {isAdmin && (
-            <div className="bg-card border border-border rounded-2xl p-6">
-              <h2 className="font-bold text-foreground mb-4 flex items-center gap-2">
-                <Plus className="w-4 h-4 text-primary" /> Convidar Novo Membro
-              </h2>
-              <form onSubmit={handleInvite} className="flex gap-3 flex-wrap">
-                <Input
-                  type="email"
-                  placeholder="email@exemplo.com"
-                  value={inviteEmail}
-                  onChange={e => setInviteEmail(e.target.value)}
-                  className="bg-secondary border-border flex-1 min-w-[200px]"
-                  required
-                />
-                <select
-                  value={inviteRole}
-                  onChange={e => setInviteRole(e.target.value)}
-                  className="bg-secondary border border-border text-foreground rounded-md px-3 py-2 text-sm"
-                >
-                  <option value="atendente">Atendente</option>
-                  <option value="vendedor">Vendedor</option>
-                  <option value="admin" disabled={admins.length >= 3}>
-                    Administrador {admins.length >= 3 ? '(limite atingido)' : ''}
-                  </option>
-                </select>
-                <Button type="submit" disabled={inviting} className="bg-primary text-primary-foreground">
-                  <MailCheck className="w-4 h-4 mr-2" />
-                  {inviting ? 'Enviando...' : 'Enviar Convite'}
-                </Button>
-              </form>
-            </div>
-          )}
+          <div className="bg-card border border-border rounded-2xl p-6">
+            <h2 className="font-bold text-foreground mb-4 flex items-center gap-2">
+              <Plus className="w-4 h-4 text-primary" /> Convidar Novo Membro
+            </h2>
+            <form onSubmit={handleInvite} className="flex gap-3 flex-wrap">
+              <Input
+                type="email"
+                placeholder="email@exemplo.com"
+                value={inviteEmail}
+                onChange={e => setInviteEmail(e.target.value)}
+                className="bg-secondary border-border flex-1 min-w-[200px]"
+                required
+              />
+              <select
+                value={inviteRole}
+                onChange={e => setInviteRole(e.target.value)}
+                className="bg-secondary border border-border text-foreground rounded-md px-3 py-2 text-sm"
+              >
+                <option value="atendente">Atendente</option>
+                <option value="admin" disabled={admins.length >= 3}>
+                  Administrador {admins.length >= 3 ? '(limite atingido)' : ''}
+                </option>
+              </select>
+              <Button type="submit" disabled={inviting} className="bg-primary text-primary-foreground">
+                <MailCheck className="w-4 h-4 mr-2" />
+                {inviting ? 'Enviando...' : 'Enviar Convite'}
+              </Button>
+            </form>
+            <p className="text-xs text-muted-foreground mt-2">O convite cria um <strong>Atendente</strong> por padrão. O membro fica como <em>convidado</em> até criar a senha.</p>
+          </div>
 
           {/* User list */}
           <div className="bg-card border border-border rounded-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-border flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-bold text-foreground">Membros da Equipe</h2>
-              <Badge variant="outline" className="text-xs">{users.length} membros</Badge>
+              <div className="flex items-center gap-2">
+                {/* Visual filter by role */}
+                <div className="flex gap-1 bg-secondary rounded-lg p-1">
+                  {ROLE_FILTERS.map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setRoleFilter(f.id)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-md text-xs font-medium transition-all",
+                        roleFilter === f.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+                <Badge variant="outline" className="text-xs">{visibleUsers.length} membros</Badge>
+              </div>
             </div>
             {isLoading ? (
               <div className="p-8 text-center text-muted-foreground text-sm">Carregando...</div>
             ) : (
               <div className="divide-y divide-border">
-                {users.map(user => {
+                {visibleUsers.map(user => {
                   const isMe = user.id === currentUser?.id;
                   const isUserAdmin = user.role === 'admin';
+                  const isLastAdmin = isUserAdmin && admins.length <= 1;
                   return (
                     <div key={user.id} className="flex items-center gap-4 px-6 py-4 hover:bg-secondary/30 transition-colors">
                       {/* Avatar */}
@@ -389,6 +425,8 @@ Retorne JSON com: { "sent": true/false, "status_code": número, "response_body":
                         <div className="flex items-center gap-2">
                           <p className="font-semibold text-foreground text-sm truncate">{user.full_name || 'Sem nome'}</p>
                           {isMe && <span className="text-[10px] bg-secondary px-2 py-0.5 rounded-full text-muted-foreground">Você</span>}
+                          {user.status === 'invited' && <span className="text-[10px] bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full">Convidado</span>}
+                          {user.status === 'suspended' && <span className="text-[10px] bg-destructive/15 text-destructive px-2 py-0.5 rounded-full">Suspenso</span>}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                         {user.created_at && (
@@ -403,14 +441,16 @@ Retorne JSON com: { "sent": true/false, "status_code": número, "response_body":
                         {roleLabel[user.role] || 'Atendente'}
                       </span>
                       {/* Actions */}
-                      {isAdmin && !isMe && (
+                      {!isMe && (
                         <div className="flex items-center gap-2 shrink-0">
                           {isUserAdmin ? (
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => handleRoleChange(user, 'atendente')}
-                              className="text-xs border-border text-muted-foreground hover:text-foreground"
+                              disabled={isLastAdmin}
+                              title={isLastAdmin ? 'Não é possível rebaixar o último administrador' : undefined}
+                              className="text-xs border-border text-muted-foreground hover:text-foreground disabled:opacity-40"
                             >
                               Rebaixar
                             </Button>
@@ -427,9 +467,9 @@ Retorne JSON com: { "sent": true/false, "status_code": número, "response_body":
                           )}
                           <button
                             onClick={() => handleDeleteUser(user)}
-                            disabled={deletingId === user.id}
+                            disabled={deletingId === user.id || isLastAdmin}
                             className="p-2 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive disabled:opacity-40"
-                            title="Remover membro"
+                            title={isLastAdmin ? 'Não é possível remover o último administrador' : 'Remover membro'}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -438,7 +478,7 @@ Retorne JSON com: { "sent": true/false, "status_code": número, "response_body":
                     </div>
                   );
                 })}
-                {users.length === 0 && (
+                {visibleUsers.length === 0 && (
                   <div className="p-8 text-center text-muted-foreground text-sm">Nenhum membro encontrado</div>
                 )}
               </div>

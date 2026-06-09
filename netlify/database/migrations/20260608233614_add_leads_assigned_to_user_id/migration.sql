@@ -1,0 +1,2 @@
+ALTER TABLE "leads" ADD COLUMN "assigned_to_user_id" uuid;--> statement-breakpoint
+ALTER TABLE "leads" ADD CONSTRAINT "leads_assigned_to_user_id_users_id_fkey" FOREIGN KEY ("assigned_to_user_id") REFERENCES "users"("id") ON DELETE SET NULL;

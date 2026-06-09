@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import AttendantSelect from '@/components/leads/AttendantSelect';
 
 const fields = [
   { key: 'name', label: 'Nome', type: 'text', required: true },
@@ -31,6 +32,15 @@ export default function EditLeadDialog({ lead, open, onClose, onSave }) {
   };
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
+
+  const setAttendant = (att) => {
+    setForm(f => ({
+      ...f,
+      assigned_to_user_id: att?.id || null,
+      assigned_to_name: att?.full_name || att?.email || '',
+      assigned_to_email: att?.email || null,
+    }));
+  };
 
   return (
     <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -109,7 +119,7 @@ export default function EditLeadDialog({ lead, open, onClose, onSave }) {
 
           {/* Attendant type */}
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Atendente</label>
+            <label className="text-xs text-muted-foreground mb-1 block">Tipo de Atendimento</label>
             <Select value={form.attendant_type || ''} onValueChange={v => set('attendant_type', v)}>
               <SelectTrigger className="bg-secondary border-border h-9 text-sm">
                 <SelectValue placeholder="Selecione..." />
@@ -119,6 +129,12 @@ export default function EditLeadDialog({ lead, open, onClose, onSave }) {
                 <SelectItem value="humano">Humano</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Responsible attendant */}
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Atendente Responsável</label>
+            <AttendantSelect value={form.assigned_to_user_id} onChange={setAttendant} />
           </div>
 
           <button
