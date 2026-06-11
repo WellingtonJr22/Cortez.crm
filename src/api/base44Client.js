@@ -93,6 +93,31 @@ export const base44 = {
         return sortByOrder(filterItems(messages, criteria), order);
       },
     },
+    LeadActivity: {
+      // Service history scoped to a single lead. lead_id is required — without it
+      // the server has nothing to scope to, so we return an empty list.
+      list: async (criteria = {}, order) => {
+        const leadId = criteria.lead_id;
+        if (!leadId) return [];
+        const items = await apiFetch(`/api/lead-activities?lead_id=${encodeURIComponent(leadId)}`, { method: 'GET' });
+        return sortByOrder(filterItems(items, criteria), order);
+      },
+      filter: async (criteria = {}, order) => {
+        const leadId = criteria.lead_id;
+        if (!leadId) return [];
+        const items = await apiFetch(`/api/lead-activities?lead_id=${encodeURIComponent(leadId)}`, { method: 'GET' });
+        return sortByOrder(filterItems(items, criteria), order);
+      },
+      create: async (data) => {
+        return apiFetch('/api/lead-activities', { method: 'POST', body: JSON.stringify(data) });
+      },
+      update: async (id, data) => {
+        return apiFetch(`/api/lead-activities/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+      },
+      delete: async (id) => {
+        return apiFetch(`/api/lead-activities/${id}`, { method: 'DELETE' });
+      },
+    },
     Automation: {
       list: async (order) => {
         const items = await apiFetch('/api/automations', { method: 'GET' });

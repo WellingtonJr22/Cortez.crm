@@ -79,6 +79,28 @@ export const messages = pgTable("messages", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Per-client service history. Each row records one contact made with the lead
+// (a call, WhatsApp message or e-mail), what the customer said, a summary, and an
+// optional next action to follow up on so the attendant doesn't lose the timing.
+// contactType / nextActionType: 'call' | 'whatsapp' | 'email'
+// status: 'pending' | 'done'
+export const leadActivities = pgTable("lead_activities", {
+  id: uuid().primaryKey().defaultRandom(),
+  leadId: uuid("lead_id")
+    .notNull()
+    .references(() => leads.id, { onDelete: "cascade" }),
+  contactType: text("contact_type").notNull().default("call"),
+  contactDate: timestamp("contact_date").defaultNow(),
+  customerFeedback: text("customer_feedback").notNull().default(""),
+  summary: text().notNull().default(""),
+  nextActionType: text("next_action_type"),
+  nextActionDate: timestamp("next_action_date"),
+  status: text().notNull().default("pending"),
+  ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Post-sale / marketing automations attached to a lead.
 // type: 'renewal_90d' | 'birthday' | 'cart_recovery' | 'follow_up'
 // status: 'pending' | 'sent' | 'completed' | 'failed'
