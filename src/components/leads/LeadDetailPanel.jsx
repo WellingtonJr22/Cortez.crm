@@ -3,6 +3,7 @@ import { X, Phone, Mail, Calendar, DollarSign, MapPin, User, Bot, MessageCircle,
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import AttendantSelect from '@/components/leads/AttendantSelect';
+import LeadActivities from '@/components/leads/LeadActivities';
 import { cn } from '@/lib/utils';
 
 const sourceLabels = {
@@ -248,6 +249,9 @@ export default function LeadDetailPanel({ lead, onClose, onSave, onDelete, extra
             className="w-full px-3 py-2 bg-secondary border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 resize-none"
           />
         </div>
+
+        {/* Histórico de Atendimento */}
+        <LeadActivities leadId={lead.id} />
       </div>
 
       {/* Footer */}
